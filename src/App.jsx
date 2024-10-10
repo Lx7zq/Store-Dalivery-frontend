@@ -1,13 +1,7 @@
 import { useState, useEffect } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  useMapEvent,
-} from "react-leaflet";
+import L from "leaflet"; // Add this import
+import { MapContainer, TileLayer, Marker, Popup, Circle } from "react-leaflet"; // Import Circle
 import "leaflet/dist/leaflet.css";
-import { Icon } from "leaflet";
 import axios from "axios";
 import "./App.css";
 import Swal from "sweetalert2";
@@ -15,16 +9,39 @@ import LocationMap from "./component/LocationMap"; // Ensure this path is correc
 
 const base_url = import.meta.env.VITE_API_BASE_URL;
 
+// Define custom icons
+const storeIcon = new L.Icon({
+  iconUrl: "https://img.icons8.com/plasticine/100/shop.png",
+  iconSize: [38, 38],
+  iconAnchor: [22, 38],
+  popupAnchor: [0, -40],
+});
+
+const houseIcon = new L.Icon({
+  iconUrl: "https://img.icons8.com/plasticine/100/exterior.png",
+  iconSize: [38, 38],
+  iconAnchor: [22, 38],
+  popupAnchor: [0, -40],
+});
+
+const selectedStoreIcon = new L.Icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/128/7877/7877890.png",
+  iconSize: [38, 38],
+  iconAnchor: [22, 38],
+  popupAnchor: [0, -40],
+});
+
 const App = () => {
   const center = [13.838487865712025, 100.02534086066446]; // SE NPRU
   const [stores, setStores] = useState([]);
   const [myLocation, setMyLocation] = useState({ lat: "", lng: "" });
-
+  const [selectedStore, setSelectedStore] = useState(null);
   const [deliveryZone, setDeliveryZone] = useState({
-    lat: 13.83231804, // ไรรดา (นครปฐม)
-    lng: 100.04105221,
+    lat: null,
+    lng: null,
     radius: 1000,
   });
+  const [loading, setLoading] = useState(true); // Add loading state
 
   // Function to calculate distance between 2 points using Haversine Formula
   const calculateDistance = (lat1, lng1, lat2, lng2) => {
@@ -47,6 +64,7 @@ const App = () => {
 
   useEffect(() => {
     const fetchStores = async () => {
+      setLoading(true); // Start loading
       try {
         const response = await axios.get(`${base_url}/api/stores`);
         if (response.status === 200) {
@@ -54,22 +72,14 @@ const App = () => {
         }
       } catch (error) {
         console.error("Error fetching stores:", error);
+      } finally {
+        setLoading(false); // Stop loading regardless of success or failure
       }
     };
     fetchStores();
   }, []);
 
-  const housingIcon = new Icon({
-    iconUrl: "https://img.icons8.com/plasticine/100/exterior.png",
-    iconSize: [38, 45], // Size of the icon
-  });
-
-  const shopIcon = new Icon({
-    iconUrl: "https://img.icons8.com/plasticine/100/shop.png",
-    iconSize: [38, 45], // Size of the icon
-  });
-
-  const handleGetLocation = () => {
+  const handlerGetLocation = () => {
     navigator.geolocation.getCurrentPosition((position) => {
       setMyLocation({
         lat: position.coords.latitude,
@@ -81,104 +91,132 @@ const App = () => {
   const handleLocationCheck = () => {
     if (!myLocation.lat || !myLocation.lng) {
       Swal.fire({
+        title: "Error!",
+        text: "Please enter your valid location",
         icon: "error",
-        title: "Oops...",
-        text: "Please enter a valid location!",
         confirmButtonText: "OK",
       });
       return;
     }
-    if (!deliveryZone.lat || !deliveryZone.lng) {
+
+    if (!selectedStore) {
       Swal.fire({
+        title: "Error!",
+        text: "Please select a store",
         icon: "error",
-        title: "Oops...",
-        text: "Please enter a valid Store location!",
         confirmButtonText: "OK",
       });
       return;
     }
+
     const distance = calculateDistance(
       myLocation.lat,
       myLocation.lng,
-      deliveryZone.lat,
-      deliveryZone.lng
+      selectedStore.lat,
+      selectedStore.lng
     );
-    if (distance <= deliveryZone.radius) {
+
+    // เปลี่ยนจาก deliveryZone.radius เป็น selectedStore.radius
+    if (distance <= selectedStore.radius) {
       Swal.fire({
-        icon: "success",
         title: "Success",
-        text: "You are within the delivery zone",
+        text: "You are within the delivery zone for " + selectedStore.name,
+        icon: "success",
         confirmButtonText: "OK",
       });
     } else {
       Swal.fire({
+        title: "Error!",
+        text: "You are outside the delivery zone for " + selectedStore.name,
         icon: "error",
-        title: "Oops...",
-        text: "You are outside the delivery zone",
         confirmButtonText: "OK",
       });
     }
   };
 
   return (
-    <div>
-      <h1>Store Delivery Zone Checker</h1>
-      <button onClick={handleGetLocation}>Get My Location</button>
-      <button onClick={handleLocationCheck}>Check Delivery Availability</button>
+    <>
+      <div className="header-container"></div>
+      <div className="button-container">
+        <button className="get-location-btn" onClick={handlerGetLocation}>
+          Get My Location
+        </button>
+        <button className="get-location-btn" onClick={handleLocationCheck}>
+          Check Delivery Availability
+        </button>
+      </div>
+
       <div>
         <MapContainer
           center={center}
           zoom={13}
           scrollWheelZoom={true}
-          style={{ height: "75vh", width: "100vw" }}
+          style={{ height: "80vh", width: "100vw" }} // Adjust height to 80% of the viewport height
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {/* Display all stores on map */}
-          {stores.map((store) => (
-            <Marker
-              position={[store.lat, store.lng]}
-              key={store.id}
-              icon={shopIcon}
-            >
-              <Popup>
-                <p>{store.name}</p>
-                <p>{store.address}</p>
-                <p>{store.raduis}</p>
-                <a href={store.direction}>Get Direction</a>
-              </Popup>
-            </Marker>
-          ))}
-          {/* Choose Location on Map */}
-          <MapMarker
-            setMyLocation={setMyLocation}
+
+          {stores.length > 0 &&
+            stores.map((store) => (
+              <Marker
+                key={store.id}
+                position={[store.lat, store.lng]}
+                icon={
+                  selectedStore && selectedStore.id === store.id
+                    ? selectedStoreIcon
+                    : storeIcon
+                }
+                eventHandlers={{
+                  click: () => {
+                    setSelectedStore(store); // Set selected store
+                  },
+                }}
+              >
+                <Popup>
+                  <b>{store.name}</b>
+                  <p>{store.address}</p>
+                  <p>Delivery Radius: {store.radius} meters</p>
+                  <a href={store.direction}>Get Direction</a>
+                </Popup>
+              </Marker>
+            ))}
+
+          {/* Display delivery radius if a store is selected */}
+          {selectedStore && (
+            <>
+              <Marker
+                position={[selectedStore.lat, selectedStore.lng]}
+                icon={selectedStoreIcon}
+              >
+                <Popup>
+                  <b>{selectedStore.name}</b>
+                  <p>{selectedStore.address}</p>
+                  <p>Delivery Radius: {selectedStore.radius} meters</p>
+                </Popup>
+              </Marker>
+              <Circle
+                center={[selectedStore.lat, selectedStore.lng]}
+                radius={selectedStore.radius} // Radius in metersฃ
+                pathOptions={{
+                  color: "blue",
+                  fillColor: "blue",
+                  fillOpacity: 0.2,
+                }}
+              />
+            </>
+          )}
+
+          <LocationMap
             myLocation={myLocation}
-            icon={housingIcon}
+            icon={houseIcon}
+            onLocationSelect={setMyLocation} // Ensure correct function name
           />
         </MapContainer>
       </div>
-    </div>
+    </>
   );
-};
-
-const MapMarker = ({ setMyLocation, myLocation, icon }) => {
-  useMapEvent({
-    click(e) {
-      const { lat, lng } = e.latlng;
-      setMyLocation({ lat, lng });
-      console.log("Click at latitude: " + lat + " longitude: " + lng);
-    },
-  });
-
-  return myLocation.lat && myLocation.lng ? (
-    <Marker position={[myLocation.lat, myLocation.lng]} icon={icon}>
-      <Popup>
-        A pretty CSS3 popup. <br /> Easily customizable.
-      </Popup>
-    </Marker>
-  ) : null;
 };
 
 export default App;
